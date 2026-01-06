@@ -25,6 +25,9 @@
         <div class="hint">
           Move: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / Arrows • Interact:
           <kbd>E</kbd> • Inventory: <kbd>I</kbd> • Toggle log: <kbd>L</kbd>
+          <br />
+          Combat hotkeys: <kbd>1</kbd> Attack • <kbd>2</kbd> Defend • <kbd>3</kbd> Heal • <kbd>4</kbd> Run •
+          <kbd>5</kbd> Fireball • <kbd>6</kbd> Poison • <kbd>7</kbd> Stun
         </div>
       </section>
 
@@ -42,7 +45,7 @@
         <div class="card">
           <h2>Inventory</h2>
           <div id="inventory" class="mono"></div>
-          <div class="small">Tip: In battle, you can use potions via Heal.</div>
+          <div class="small">Tip: Press <kbd>I</kbd> to open the inventory.</div>
         </div>
 
         <div class="card">
@@ -53,6 +56,9 @@
             <button data-act="defend">Defend</button>
             <button data-act="heal">Heal</button>
             <button data-act="run">Run</button>
+            <button data-act="fireball">Fireball</button>
+            <button data-act="poison">Poison Strike</button>
+            <button data-act="stun">Stun Bash</button>
           </div>
         </div>
 
@@ -66,18 +72,45 @@
     <dialog id="helpDialog">
       <h2>How to play</h2>
       <ul>
-        <li>Explore the map. Stepping on tall grass can trigger random encounters.</li>
-        <li>Find chests for potions and gold.</li>
-        <li>Fight monsters in turn-based combat.</li>
-        <li>Level up to increase HP, Attack, and Defense.</li>
-        <li>Save/Load works in this browser (LocalStorage).</li>
+        <li>Explore Town. Tall grass can trigger random encounters.</li>
+        <li>Press <kbd>E</kbd> to interact with chests, signs, shop, Elder, and gates.</li>
+        <li>Go through the gate to the dungeon. Find the red altar tile and beat the boss.</li>
+        <li>Return to the Elder for a reward.</li>
+        <li>Save/Load uses LocalStorage in your browser.</li>
       </ul>
-      <p class="small">
-        Dev tip: open the console to see extra debug messages and tweak values in <code>game.js</code>.
-      </p>
       <form method="dialog">
         <button>Close</button>
       </form>
+    </dialog>
+
+    <dialog id="invDialog">
+      <h2>Inventory</h2>
+      <div id="invContent" class="mono"></div>
+      <div class="actions">
+        <button id="btnUsePotion">Use Potion (+HP)</button>
+        <button id="btnCloseInv">Close</button>
+      </div>
+    </dialog>
+
+    <dialog id="shopDialog">
+      <h2>Shop</h2>
+      <div class="small">Buy items with gold. Gear auto-equips if better.</div>
+      <div id="shopContent" class="mono"></div>
+      <div class="actions">
+        <button data-buy="potion">Buy Potion (10g)</button>
+        <button data-buy="weapon">Buy Weapon (35g)</button>
+        <button data-buy="armor">Buy Armor (35g)</button>
+        <button id="btnCloseShop">Close</button>
+      </div>
+    </dialog>
+
+    <dialog id="storyDialog">
+      <h2 id="storyTitle">Dialogue</h2>
+      <div id="storyBody" class="mono"></div>
+      <div class="actions">
+        <button id="storyBtn1">OK</button>
+        <button id="storyBtn2" class="hidden">Option</button>
+      </div>
     </dialog>
 
     <script src="./game.js"></script>
