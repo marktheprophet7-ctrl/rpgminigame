@@ -8,30 +8,38 @@
   </head>
   <body>
     <header class="topbar">
-      <div class="title">Mini RPG</div>
+      <div class="brand">
+        <div class="brand-dot"></div>
+        <div class="title">Mini RPG</div>
+      </div>
 
-      <div class="buttons">
+      <div class="top-actions">
+        <button id="btnHud" class="ghost" title="Toggle HUD (mobile)">HUD</button>
         <button id="btnNew" title="Start a new game">New</button>
         <button id="btnSave" title="Save to this browser">Save</button>
         <button id="btnLoad" title="Load from this browser">Load</button>
-        <button id="btnHelp" title="Controls & info">Help</button>
+        <button id="btnHelp" class="ghost" title="Controls & info">Help</button>
       </div>
     </header>
 
     <main class="layout">
       <section class="panel">
-        <canvas id="game" width="640" height="384" aria-label="Game canvas"></canvas>
+        <div class="canvasWrap">
+          <canvas id="game" width="768" height="448" aria-label="Game canvas"></canvas>
+          <div class="cornerPill" id="pill">Exploring</div>
+        </div>
 
         <div class="hint">
           Move: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / Arrows • Interact:
           <kbd>E</kbd> • Inventory: <kbd>I</kbd> • Toggle log: <kbd>L</kbd>
           <br />
-          Combat hotkeys: <kbd>1</kbd> Attack • <kbd>2</kbd> Defend • <kbd>3</kbd> Heal • <kbd>4</kbd> Run •
+          Combat hotkeys:
+          <kbd>1</kbd> Attack • <kbd>2</kbd> Defend • <kbd>3</kbd> Heal • <kbd>4</kbd> Run •
           <kbd>5</kbd> Fireball • <kbd>6</kbd> Poison • <kbd>7</kbd> Stun
         </div>
       </section>
 
-      <aside class="hud">
+      <aside class="hud" id="hud">
         <div class="card">
           <h2>Hero</h2>
           <div id="heroStats" class="mono"></div>
@@ -88,7 +96,7 @@
       <div id="invContent" class="mono"></div>
       <div class="actions">
         <button id="btnUsePotion">Use Potion (+HP)</button>
-        <button id="btnCloseInv">Close</button>
+        <button id="btnCloseInv" class="ghost">Close</button>
       </div>
     </dialog>
 
@@ -100,7 +108,7 @@
         <button data-buy="potion">Buy Potion (10g)</button>
         <button data-buy="weapon">Buy Weapon (35g)</button>
         <button data-buy="armor">Buy Armor (35g)</button>
-        <button id="btnCloseShop">Close</button>
+        <button id="btnCloseShop" class="ghost">Close</button>
       </div>
     </dialog>
 

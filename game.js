@@ -1,9 +1,10 @@
-/* Mini RPG - "Final" upgraded version (vanilla JS)
+/* Mini RPG (procedural visuals edition)
+ * - Procedural (code-generated) tiles for the whole world (no tiles.png needed)
+ * - Smooth movement + camera easing + shake + particles + floaters
  * - Town + Dungeon maps, doors, NPC quest, boss
- * - Inventory modal, shop, equipment
- * - Mana + skills, status effects, enemy abilities
- * - Smooth movement, camera easing, shake, particles, floaters
- * - Optional sprites: ./assets/hero.png (16x16 frames, 3 columns, 4 rows)
+ * - Shop, inventory modal, equipment
+ * - Mana + skills, statuses, enemy abilities
+ * - Works on GitHub Pages (vanilla JS)
  */
 
 (() => {
@@ -14,10 +15,6 @@
   const rnd = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
   const chance = (p) => Math.random() < p;
   const lerp = (a, b, t) => a + (b - a) * t;
-
-  function nowISO() {
-    return new Date().toISOString();
-  }
 
   // ---------- DOM ----------
   const canvas = document.getElementById("game");
@@ -30,11 +27,15 @@
   const elCombatActions = document.getElementById("combatActions");
   const elLog = document.getElementById("log");
   const elLogCard = document.getElementById("logCard");
+  const elPill = document.getElementById("pill");
 
   const btnNew = document.getElementById("btnNew");
   const btnSave = document.getElementById("btnSave");
   const btnLoad = document.getElementById("btnLoad");
   const btnHelp = document.getElementById("btnHelp");
+  const btnHud = document.getElementById("btnHud");
+  const hud = document.getElementById("hud");
+
   const helpDialog = document.getElementById("helpDialog");
 
   const invDialog = document.getElementById("invDialog");
@@ -65,15 +66,14 @@
     WATER: 4,
     SIGN: 5,
     SHOP: 6,
-    NPC: 7,   // Elder
-    DOOR: 8,  // gate
-    BOSS: 9,  // boss altar
+    NPC: 7,
+    DOOR: 8,
+    BOSS: 9,
   };
 
   const ENCOUNTER_RATE_GRASS = 0.12;
   const ENCOUNTER_RATE_FLOOR = 0.02;
-
-  const STORAGE_KEY = "mini_rpg_save_v2";
+  const STORAGE_KEY = "mini_rpg_save_procedural_v1";
 
   // ---------- Maps ----------
   const mapsSrc = {
@@ -150,28 +150,9 @@
     return world.maps[world.current];
   }
 
-  // ---------- Assets (optional sprites) ----------
-  function loadImage(src) {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = reject;
-      img.src = src;
-    });
-  }
-
-  const assets = { hero: null };
-  async function loadAssets() {
-    try {
-      assets.hero = await loadImage("./assets/hero.png");
-    } catch {
-      // no sprite, fallback to rectangle
-    }
-  }
-
   // ---------- State ----------
   const defaultState = () => ({
-    meta: { version: 2, savedAt: null },
+    meta: { version: 1, savedAt: null },
     rngSeed: Math.floor(Math.random() * 1e9),
 
     hero: {
@@ -211,7 +192,7 @@
       bossDefeated: false,
     },
 
-    ui: { showLog: true },
+    ui: { showLog: true, hudHiddenMobile: true },
 
     combat: null,
 
@@ -245,10 +226,300 @@
 
   initAnimPositions();
 
+  // ---------- Procedural Tiles (code-only sprites) ----------
+  const PT = { size: 16, cache: new Map() };
+
+  function hash2(a, b) {
+    let x = (a * 374761393 + b * 668265263) | 0;
+    x = (x ^ (x >> 13)) | 0;
+    x = (x * 1274126177) | 0;
+    return (x ^ (x >> 16)) >>> 0;
+  }
+
+  function prng(seed) {
+    let s = seed >>> 0;
+    return () => {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return s / 4294967296;
+    };
+  }
+
+  function setPx(data, i, r, g, b, a = 255) {
+    data[i] = r;
+    data[i + 1] = g;
+    data[i + 2] = b;
+    data[i + 3] = a;
+  }
+
+  function makeTileCanvas(drawFn, key) {
+    if (PT.cache.has(key)) return PT.cache.get(key);
+    const c = document.createElement("canvas");
+    c.width = PT.size;
+    c.height = PT.size;
+    const g = c.getContext("2d");
+    const img = g.createImageData(PT.size, PT.size);
+    drawFn(img.data, PT.size);
+    g.putImageData(img, 0, 0);
+    PT.cache.set(key, c);
+    return c;
+  }
+
+  function drawNoiseTile(baseRGB, variance, seed, extraFn = null) {
+    return makeTileCanvas(
+      (data, s) => {
+        const rand = prng(seed);
+        for (let y = 0; y < s; y++) {
+          for (let x = 0; x < s; x++) {
+            const n = (rand() - 0.5) * 2;
+            const r = clamp(Math.round(baseRGB[0] + n * variance), 0, 255);
+            const g = clamp(Math.round(baseRGB[1] + n * variance), 0, 255);
+            const b = clamp(Math.round(baseRGB[2] + n * variance), 0, 255);
+            const i = (y * s + x) * 4;
+            setPx(data, i, r, g, b, 255);
+          }
+        }
+        extraFn?.(data, s, rand);
+      },
+      `noise:${baseRGB.join(",")}:${variance}:${seed}:${extraFn ? 1 : 0}`
+    );
+  }
+
+  function drawGrassTile(seed) {
+    return makeTileCanvas(
+      (data, s) => {
+        const rand = prng(seed);
+        for (let y = 0; y < s; y++) {
+          for (let x = 0; x < s; x++) {
+            const n = (rand() - 0.5) * 2;
+            const r = clamp(22 + n * 10, 0, 255);
+            const g = clamp(70 + n * 18, 0, 255);
+            const b = clamp(40 + n * 10, 0, 255);
+            const i = (y * s + x) * 4;
+            setPx(data, i, r | 0, g | 0, b | 0, 255);
+            if (rand() < 0.06) setPx(data, i, (r + 8) | 0, (g + 25) | 0, (b + 8) | 0, 255);
+          }
+        }
+      },
+      `grass:${seed}`
+    );
+  }
+
+  function drawDirtTile(seed) {
+    return drawNoiseTile([96, 66, 40], 18, seed, (data, s, rand) => {
+      for (let k = 0; k < 10; k++) {
+        const x = (rand() * s) | 0,
+          y = (rand() * s) | 0;
+        const i = (y * s + x) * 4;
+        setPx(data, i, 120, 92, 64, 255);
+      }
+    });
+  }
+
+  function drawStoneTile(seed) {
+    return drawNoiseTile([90, 92, 102], 14, seed, (data, s, rand) => {
+      for (let y = 0; y < s; y++) {
+        if (y % 5 === 0) {
+          for (let x = 0; x < s; x++) {
+            const i = (y * s + x) * 4;
+            setPx(data, i, 70, 72, 82, 255);
+          }
+        }
+      }
+      for (let x = 0; x < s; x++) {
+        if (x % 6 === 0) {
+          for (let y = 0; y < s; y++) {
+            const i = (y * s + x) * 4;
+            setPx(data, i, 72, 74, 84, 255);
+          }
+        }
+      }
+      for (let k = 0; k < 12; k++) {
+        const x = (rand() * s) | 0,
+          y = (rand() * s) | 0;
+        const i = (y * s + x) * 4;
+        setPx(data, i, 110, 112, 124, 255);
+      }
+    });
+  }
+
+  function drawWaterTile(seed, frame) {
+    // animated by slightly shifting the seed + adding brighter ripples
+    return drawNoiseTile([18, 62, 96], 12, seed ^ (frame * 9973), (data, s, rand) => {
+      for (let k = 0; k < 10; k++) {
+        const x = (rand() * s) | 0,
+          y = (rand() * s) | 0;
+        const i = (y * s + x) * 4;
+        setPx(data, i, 40, 120, 160, 255);
+      }
+      // a couple horizontal highlights
+      const yy = (frame % s) | 0;
+      for (let x = 0; x < s; x++) {
+        const i = (yy * s + x) * 4;
+        data[i] = clamp(data[i] + 10, 0, 255);
+        data[i + 1] = clamp(data[i + 1] + 18, 0, 255);
+        data[i + 2] = clamp(data[i + 2] + 18, 0, 255);
+      }
+    });
+  }
+
+  function drawWallPiece(kind, seed) {
+    return makeTileCanvas(
+      (data, s) => {
+        const rand = prng(seed);
+
+        // base stone with vertical lighting
+        for (let y = 0; y < s; y++) {
+          for (let x = 0; x < s; x++) {
+            const n = (rand() - 0.5) * 2;
+            let r = 70 + n * 10;
+            let g = 72 + n * 10;
+            let b = 84 + n * 10;
+            const light = 1 - (y / (s - 1)) * 0.5;
+            r *= light;
+            g *= light;
+            b *= light;
+            const i = (y * s + x) * 4;
+            setPx(data, i, clamp(r, 0, 255) | 0, clamp(g, 0, 255) | 0, clamp(b, 0, 255) | 0, 255);
+          }
+        }
+
+        const darkenLineX = (x0, amount) => {
+          for (let y = 0; y < s; y++) {
+            const i = (y * s + x0) * 4;
+            data[i] = clamp(data[i] - amount, 0, 255);
+            data[i + 1] = clamp(data[i + 1] - amount, 0, 255);
+            data[i + 2] = clamp(data[i + 2] - amount, 0, 255);
+          }
+        };
+        const darkenLineY = (y0, amount) => {
+          for (let x = 0; x < s; x++) {
+            const i = (y0 * s + x) * 4;
+            data[i] = clamp(data[i] - amount, 0, 255);
+            data[i + 1] = clamp(data[i + 1] - amount, 0, 255);
+            data[i + 2] = clamp(data[i + 2] - amount, 0, 255);
+          }
+        };
+        const brightenLineY = (y0, amount) => {
+          for (let x = 0; x < s; x++) {
+            const i = (y0 * s + x) * 4;
+            data[i] = clamp(data[i] + amount, 0, 255);
+            data[i + 1] = clamp(data[i + 1] + amount, 0, 255);
+            data[i + 2] = clamp(data[i + 2] + amount, 0, 255);
+          }
+        };
+
+        if (kind === "top") {
+          brightenLineY(0, 25);
+          darkenLineY(s - 1, 18);
+        } else if (kind === "bottom") {
+          darkenLineY(0, 12);
+          darkenLineY(s - 1, 22);
+        } else if (kind === "left") {
+          darkenLineX(s - 1, 18);
+          for (let y = 0; y < s; y++) {
+            const i = (y * s + 0) * 4;
+            data[i] = clamp(data[i] + 18, 0, 255);
+            data[i + 1] = clamp(data[i + 1] + 18, 0, 255);
+            data[i + 2] = clamp(data[i + 2] + 18, 0, 255);
+          }
+        } else if (kind === "right") {
+          darkenLineX(0, 18);
+          for (let y = 0; y < s; y++) {
+            const i = (y * s + (s - 1)) * 4;
+            data[i] = clamp(data[i] + 18, 0, 255);
+            data[i + 1] = clamp(data[i + 1] + 18, 0, 255);
+            data[i + 2] = clamp(data[i + 2] + 18, 0, 255);
+          }
+        } else if (kind.startsWith("inner_")) {
+          const side = kind.slice(6); // tl,tr,bl,br
+          if (side.includes("t")) brightenLineY(0, 20);
+          if (side.includes("b")) darkenLineY(s - 1, 18);
+          if (side.includes("l")) darkenLineX(s - 1, 14);
+          if (side.includes("r")) darkenLineX(0, 14);
+
+          for (let y = 0; y < s; y++) {
+            for (let x = 0; x < s; x++) {
+              const notch =
+                (side === "tl" && x > 10 && y > 10) ||
+                (side === "tr" && x < 5 && y > 10) ||
+                (side === "bl" && x > 10 && y < 5) ||
+                (side === "br" && x < 5 && y < 5);
+              if (notch) {
+                const i = (y * s + x) * 4;
+                data[i] = clamp(data[i] - 22, 0, 255);
+                data[i + 1] = clamp(data[i + 1] - 22, 0, 255);
+                data[i + 2] = clamp(data[i + 2] - 22, 0, 255);
+              }
+            }
+          }
+        }
+
+        // micro highlights
+        for (let k = 0; k < 10; k++) {
+          const x = (rand() * s) | 0,
+            y = (rand() * s) | 0;
+          const i = (y * s + x) * 4;
+          data[i] = clamp(data[i] + 18, 0, 255);
+          data[i + 1] = clamp(data[i + 1] + 18, 0, 255);
+          data[i + 2] = clamp(data[i + 2] + 18, 0, 255);
+        }
+      },
+      `wall:${kind}:${seed}`
+    );
+  }
+
+  function isWallAt(x, y) {
+    const t = grid()[y]?.[x];
+    return t === T.WALL;
+  }
+
+  function getWallVariant(x, y) {
+    const up = isWallAt(x, y - 1);
+    const down = isWallAt(x, y + 1);
+    const left = isWallAt(x - 1, y);
+    const right = isWallAt(x + 1, y);
+
+    // inner corners
+    if (!up && left && down && !right) return "inner_tr";
+    if (!up && right && down && !left) return "inner_tl";
+    if (!down && left && up && !right) return "inner_br";
+    if (!down && right && up && !left) return "inner_bl";
+
+    // edges
+    if (!up && down) return "top";
+    if (!down && up) return "bottom";
+    if (!left && right) return "left";
+    if (!right && left) return "right";
+
+    // fallback
+    return "top";
+  }
+
+  function getProceduralTile(drawType, x, y) {
+    const baseSeed = hash2(state.rngSeed ?? 12345, hash2(x, y));
+    const waterFrame = (anim.time / 10) | 0;
+
+    if (drawType === T.GRASS) return drawGrassTile(baseSeed);
+    if (drawType === T.WATER) return drawWaterTile(baseSeed, waterFrame);
+
+    if (drawType === T.FLOOR) {
+      return world.current === "dungeon" ? drawStoneTile(baseSeed) : drawDirtTile(baseSeed);
+    }
+
+    if (drawType === T.CHEST) return drawNoiseTile([92, 62, 30], 12, baseSeed);
+    if (drawType === T.SIGN) return drawNoiseTile([82, 82, 82], 8, baseSeed);
+    if (drawType === T.SHOP) return drawNoiseTile([55, 35, 75], 10, baseSeed);
+    if (drawType === T.NPC) return drawNoiseTile([70, 30, 80], 10, baseSeed);
+    if (drawType === T.DOOR) return drawNoiseTile([92, 75, 40], 10, baseSeed);
+    if (drawType === T.BOSS) return drawNoiseTile([92, 24, 24], 10, baseSeed);
+
+    return drawStoneTile(baseSeed);
+  }
+
   // ---------- Logging ----------
   function addLog(msg) {
     state.log.unshift(`[${String(state.turn).padStart(3, "0")}] ${msg}`);
-    state.log = state.log.slice(0, 70);
+    state.log = state.log.slice(0, 80);
     renderHUD();
   }
 
@@ -344,58 +615,37 @@
   }
 
   // ---------- Rendering ----------
-  function tileColor(t) {
-    switch (t) {
-      case T.FLOOR: return "#1a2a55";
-      case T.WALL: return "#0c1226";
-      case T.GRASS: return "#123c2c";
-      case T.WATER: return "#0b2d4d";
-      case T.CHEST: return "#3b2a12";
-      case T.SIGN: return "#2b2b2b";
-      case T.SHOP: return "#2a214a";
-      case T.NPC: return "#3a1f4a";
-      case T.DOOR: return "#4a3a13";
-      case T.BOSS: return "#4a1515";
-      default: return "#000";
-    }
-  }
+  function drawHero(px, py) {
+    // code-only hero (tiny pixel person)
+    ctx.save();
+    ctx.translate(px, py);
 
-  function dirToRow(dir) {
-    if (dir === "down") return 0;
-    if (dir === "left") return 1;
-    if (dir === "right") return 2;
-    return 3;
-  }
+    // shadow
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    ctx.beginPath();
+    ctx.ellipse(TILE / 2, TILE - 5, 6, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
 
-  function drawHeroSprite(px, py) {
-    // fallback
-    if (!assets.hero) {
-      ctx.fillStyle = "#d7e3ff";
-      ctx.fillRect(px + 5, py + 5, TILE - 10, TILE - 10);
-      ctx.fillStyle = "#7aa2ff";
-      ctx.fillRect(px + 10, py + 10, 4, 4);
-      return;
-    }
+    // body
+    ctx.fillStyle = "rgba(215,227,255,1)";
+    ctx.fillRect(8, 7, 8, 10);
 
-    // hero.png expected: 3 columns x 4 rows of 16x16 frames
-    const frameW = 16, frameH = 16;
-    const row = dirToRow(state.hero.dir);
+    // head
+    ctx.fillStyle = "rgba(255,224,190,1)";
+    ctx.fillRect(9, 3, 6, 5);
 
-    const moving =
-      Math.abs(anim.heroPx.x - anim.heroTarget.x) +
-        Math.abs(anim.heroPx.y - anim.heroTarget.y) >
-      1;
+    // accent (cloak)
+    ctx.fillStyle = "rgba(122,162,255,0.95)";
+    ctx.fillRect(7, 10, 10, 6);
 
-    const frame = moving ? Math.floor(anim.time / 8) % 3 : 1;
-    const sx = frame * frameW;
-    const sy = row * frameH;
+    // direction hint
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    if (state.hero.dir === "up") ctx.fillRect(11, 2, 2, 2);
+    if (state.hero.dir === "down") ctx.fillRect(11, 8, 2, 2);
+    if (state.hero.dir === "left") ctx.fillRect(8, 6, 2, 2);
+    if (state.hero.dir === "right") ctx.fillRect(14, 6, 2, 2);
 
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(
-      assets.hero,
-      sx, sy, frameW, frameH,
-      px + 4, py + 4, TILE - 8, TILE - 8
-    );
+    ctx.restore();
   }
 
   function drawBar(x, y, w, h, v, max) {
@@ -421,7 +671,8 @@
     anim.cam.y = lerp(anim.cam.y, anim.heroPx.y, 0.10);
 
     // Shake
-    let shakeX = 0, shakeY = 0;
+    let shakeX = 0,
+      shakeY = 0;
     if (anim.shake.t > 0) {
       anim.shake.t--;
       shakeX = (Math.random() - 0.5) * anim.shake.power;
@@ -435,7 +686,7 @@
       Math.round(canvas.height / 2 - anim.cam.y - TILE / 2 + shakeY)
     );
 
-    // Draw map
+    // Draw map (procedural tiles)
     const g = grid();
     for (let y = 0; y < MAP_H; y++) {
       for (let x = 0; x < MAP_W; x++) {
@@ -446,16 +697,22 @@
           t = T.FLOOR;
         }
 
-        ctx.fillStyle = tileColor(t);
-        ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+        let tileCanvas;
+        if (t === T.WALL) {
+          const variant = getWallVariant(x, y);
+          const seed = hash2(state.rngSeed ?? 12345, hash2(x, y));
+          tileCanvas = drawWallPiece(variant, seed);
+        } else {
+          tileCanvas = getProceduralTile(t, x, y);
+        }
 
-        ctx.strokeStyle = "rgba(255,255,255,0.03)";
-        ctx.strokeRect(x * TILE, y * TILE, TILE, TILE);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(tileCanvas, x * TILE, y * TILE, TILE, TILE);
       }
     }
 
     // Hero
-    drawHeroSprite(anim.heroPx.x, anim.heroPx.y);
+    drawHero(anim.heroPx.x, anim.heroPx.y);
 
     // FX
     updateAndDrawFX();
@@ -467,7 +724,8 @@
       ctx.fillStyle = "rgba(0,0,0,0.55)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      const w = 520, h = 240;
+      const w = 560,
+        h = 260;
       const x = (canvas.width - w) / 2;
       const y = (canvas.height - h) / 2;
 
@@ -481,16 +739,23 @@
       ctx.fillStyle = "#ffefef";
       ctx.font = "16px ui-monospace, Menlo, Consolas, monospace";
       ctx.fillText(`${e.name} (Lv ${e.level})`, x + 18, y + 38);
-
-      drawBar(x + 18, y + 52, 220, 12, e.hp, e.hpMax);
+      drawBar(x + 18, y + 52, 260, 12, e.hp, e.hpMax);
 
       ctx.fillStyle = "#e7ecff";
-      ctx.fillText("You", x + 18, y + 120);
-      drawBar(x + 18, y + 134, 220, 12, state.hero.hp, state.hero.hpMax);
+      ctx.fillText("You", x + 18, y + 128);
+      drawBar(x + 18, y + 142, 260, 12, state.hero.hp, state.hero.hpMax);
+
+      // MP bar
+      ctx.fillStyle = "rgba(255,255,255,0.10)";
+      ctx.fillRect(x + 18, y + 160, 260, 10);
+      ctx.fillStyle = "rgba(122,162,255,0.9)";
+      ctx.fillRect(x + 18, y + 160, Math.floor(260 * clamp(state.hero.mp / state.hero.mpMax, 0, 1)), 10);
+      ctx.strokeStyle = "rgba(255,255,255,0.22)";
+      ctx.strokeRect(x + 18, y + 160, 260, 10);
 
       ctx.fillStyle = "rgba(255,255,255,0.85)";
       ctx.font = "12px ui-monospace, Menlo, Consolas, monospace";
-      ctx.fillText("Choose an action on the right panel (or press 1-7).", x + 18, y + 210);
+      ctx.fillText("Use actions in the HUD (or press 1-7).", x + 18, y + 220);
     }
 
     requestAnimationFrame(draw);
@@ -511,7 +776,7 @@
 
     const t = grid()[state.hero.y][state.hero.x];
     const tileName =
-      t === T.FLOOR ? "Stone path" :
+      t === T.FLOOR ? (world.current === "dungeon" ? "Stone floor" : "Dirt path") :
       t === T.GRASS ? "Tall grass" :
       t === T.WALL ? "Wall" :
       t === T.WATER ? "Water" :
@@ -539,6 +804,7 @@
     if (!state.combat) {
       elCombatBox.textContent = "No combat.";
       elCombatActions.classList.add("hidden");
+      elPill.textContent = "Exploring";
     } else {
       const e = state.combat.enemy;
       elCombatBox.textContent = [
@@ -549,9 +815,14 @@
         `Your turn: ${state.combat.turn === "hero" ? "YES" : "NO"}`,
       ].join("\n");
       elCombatActions.classList.remove("hidden");
+      elPill.textContent = "Combat!";
     }
 
     elLogCard.classList.toggle("hidden", !state.ui.showLog);
+
+    // mobile HUD visibility
+    hud.classList.toggle("isHidden", state.ui.hudHiddenMobile);
+
     elLog.textContent = state.log.join("\n");
   }
 
@@ -719,8 +990,7 @@
 
     const p = worldToPx(x, y);
     anim.heroTarget = { ...p };
-    // keep current smooth pos but update if you want instant snap:
-    // anim.heroPx = { ...p };
+
     addLog(`You arrive at: ${mapName}.`);
     renderHUD();
   }
@@ -755,14 +1025,12 @@
     }
 
     // Random encounter
-    const p = (t === T.GRASS) ? ENCOUNTER_RATE_GRASS : (t === T.FLOOR ? ENCOUNTER_RATE_FLOOR : 0);
-    if (p > 0 && chance(p)) {
-      startCombat();
-    } else {
-      addLog("You move.");
+    const p = t === T.GRASS ? ENCOUNTER_RATE_GRASS : t === T.FLOOR ? ENCOUNTER_RATE_FLOOR : 0;
+    if (p > 0 && chance(p)) startCombat();
+    else {
       state.turn++;
+      renderHUD();
     }
-    renderHUD();
   }
 
   function facingTile() {
@@ -800,31 +1068,14 @@
         showStory(
           "Elder",
           "Traveler… a dark presence lurks in the dungeon.\nDefeat the beast on the red altar (B) and return.\n\nWill you accept this quest?",
-          {
-            text: "Accept",
-            onClick: () => {
-              state.quests.elder = "active";
-              addLog("Quest accepted: Defeat the dungeon boss.");
-              state.turn++;
-            },
-          },
-          {
-            text: "Not now",
-            onClick: () => {
-              addLog("You decline for now.");
-              state.turn++;
-            },
-          }
+          { text: "Accept", onClick: () => { state.quests.elder = "active"; addLog("Quest accepted: Defeat the dungeon boss."); state.turn++; } },
+          { text: "Not now", onClick: () => { addLog("You decline for now."); state.turn++; } }
         );
         return;
       }
 
       if (q === "active") {
-        showStory(
-          "Elder",
-          "The dungeon gate is to the southeast.\nFind the red altar and defeat the beast.",
-          { text: "I’m on it", onClick: () => { state.turn++; } }
-        );
+        showStory("Elder", "The dungeon gate is to the southeast.\nFind the red altar and defeat the beast.", { text: "I’m on it", onClick: () => { state.turn++; } });
         return;
       }
 
@@ -832,28 +1083,13 @@
         showStory(
           "Elder",
           "You did it! The town is safe.\nTake this reward: 80 gold and a potion stash.",
-          {
-            text: "Thanks",
-            onClick: () => {
-              state.hero.gold += 80;
-              state.hero.potions += 3;
-              state.quests.elder = "completed";
-              addLog("Quest complete! +80 gold, +3 potions.");
-              state.turn++;
-            },
-          }
+          { text: "Thanks", onClick: () => { state.hero.gold += 80; state.hero.potions += 3; state.quests.elder = "completed"; addLog("Quest complete! +80 gold, +3 potions."); state.turn++; } }
         );
         return;
       }
 
-      if (q === "completed") {
-        showStory(
-          "Elder",
-          "You’ve already done a great deed.\nTrain, explore, and grow stronger.",
-          { text: "OK", onClick: () => { state.turn++; } }
-        );
-        return;
-      }
+      showStory("Elder", "You’ve already done a great deed.\nTrain, explore, and grow stronger.", { text: "OK", onClick: () => { state.turn++; } });
+      return;
     }
 
     if (t === T.SIGN) {
@@ -873,7 +1109,6 @@
 
         const gold = rnd(8, 20);
         state.hero.gold += gold;
-
         let lootMsg = `+${gold} gold`;
 
         if (chance(0.55)) {
@@ -881,7 +1116,6 @@
           lootMsg += " and +1 potion";
         }
 
-        // 25% chance: gear
         if (chance(0.25)) {
           if (chance(0.5)) {
             const w = randomWeapon();
@@ -904,6 +1138,7 @@
 
         addLog(`You open the chest: ${lootMsg}!`);
       }
+
       state.turn++;
       renderHUD();
       return;
@@ -943,7 +1178,7 @@
 
   function startCombat() {
     const enemy = makeEnemy(state.hero.level);
-    state.combat = { enemy, turn: "hero", heroDefending: false, lastAction: null };
+    state.combat = { enemy, turn: "hero", heroDefending: false };
     addLog(`A wild ${enemy.name} appears!`);
     renderHUD();
   }
@@ -963,7 +1198,7 @@
       enraged: false,
       isBoss: true,
     };
-    state.combat = { enemy, turn: "hero", heroDefending: false, lastAction: null };
+    state.combat = { enemy, turn: "hero", heroDefending: false };
     addLog("A terrifying presence blocks your path… THE BOSS attacks!");
     renderHUD();
   }
@@ -982,12 +1217,11 @@
       const hpGain = 6 + rnd(0, 3);
       const atkGain = 1 + (chance(0.5) ? 1 : 0);
       const defGain = chance(0.6) ? 1 : 0;
+      const mpGain = 3 + rnd(0, 2);
 
       state.hero.hpMax += hpGain;
       state.hero.atk += atkGain;
       state.hero.def += defGain;
-
-      const mpGain = 3 + rnd(0, 2);
       state.hero.mpMax += mpGain;
 
       state.hero.hp = state.hero.hpMax;
@@ -995,9 +1229,7 @@
 
       state.hero.xpToNext = Math.round(state.hero.xpToNext * 1.35 + 10);
 
-      addLog(
-        `Level up! Lv ${state.hero.level}. +${hpGain} HP, +${atkGain} ATK, +${defGain} DEF, +${mpGain} MP.`
-      );
+      addLog(`Level up! Lv ${state.hero.level}. +${hpGain} HP, +${atkGain} ATK, +${defGain} DEF, +${mpGain} MP.`);
     }
   }
 
@@ -1051,6 +1283,18 @@
     return "attack";
   }
 
+  function defeatPenalty() {
+    addLog("You are defeated... You wake up at full HP but lose some gold.");
+    const lost = Math.floor(state.hero.gold * 0.25);
+    state.hero.gold -= lost;
+    state.hero.hp = state.hero.hpMax;
+    state.hero.mp = state.hero.mpMax;
+    state.combat = null;
+    addLog(`You dropped ${lost} gold in the chaos.`);
+    state.turn++;
+    renderHUD();
+  }
+
   function doEnemyTurn() {
     if (!state.combat) return;
     const e = state.combat.enemy;
@@ -1075,51 +1319,22 @@
       return;
     }
 
+    const heroDef = getHeroDef() + (state.combat.heroDefending ? 3 : 0);
+
     if (act === "poison") {
-      const heroDef = getHeroDef() + (state.combat.heroDefending ? 3 : 0);
       const dmg = calcDamage(e.atk, heroDef, 1);
       state.hero.hp = clamp(state.hero.hp - dmg, 0, state.hero.hpMax);
       addLog(`${e.name} uses Poison Bite for ${dmg} damage!`);
       addStatus(state.hero, "poison", { turns: 3, dmg: 2 });
-      addLog(`You are poisoned!`);
+      addLog("You are poisoned!");
       state.combat.heroDefending = false;
 
       shake(7, 10);
       spawnFloater(`-${dmg}`, canvas.width / 2, canvas.height / 2);
       spawnParticles(anim.heroPx.x + 40, anim.heroPx.y + 20, 14);
 
-      if (state.hero.hp <= 0) {
-        addLog("You are defeated... You wake up at full HP but lose some gold.");
-        const lost = Math.floor(state.hero.gold * 0.25);
-        state.hero.gold -= lost;
-        state.hero.hp = state.hero.hpMax;
-        state.hero.mp = state.hero.mpMax;
-        state.combat = null;
-        addLog(`You dropped ${lost} gold in the chaos.`);
-        state.turn++;
-        renderHUD();
-        return;
-      }
-
-      // Start of hero turn status tick + stun check
-      tickStatuses(state.hero, "You");
-      if (hasStatus(state.hero, "stun")) {
-        addLog("You are stunned and lose your turn!");
-        state.combat.turn = "enemy";
-        state.turn++;
-        renderHUD();
-        setTimeout(doEnemyTurn, 280);
-        return;
-      }
-
-      state.combat.turn = "hero";
-      state.turn++;
-      renderHUD();
-      return;
-    }
-
-    if (act === "bolt") {
-      const heroDef = getHeroDef() + (state.combat.heroDefending ? 3 : 0);
+      if (state.hero.hp <= 0) return defeatPenalty();
+    } else if (act === "bolt") {
       const dmg = calcDamage(e.atk + 3, heroDef, 3);
       state.hero.hp = clamp(state.hero.hp - dmg, 0, state.hero.hpMax);
       addLog(`${e.name} casts Arcane Bolt for ${dmg} damage!`);
@@ -1129,61 +1344,20 @@
       spawnFloater(`-${dmg}`, canvas.width / 2, canvas.height / 2);
       spawnParticles(anim.heroPx.x + 40, anim.heroPx.y + 20, 18);
 
-      if (state.hero.hp <= 0) {
-        addLog("You are defeated... You wake up at full HP but lose some gold.");
-        const lost = Math.floor(state.hero.gold * 0.25);
-        state.hero.gold -= lost;
-        state.hero.hp = state.hero.hpMax;
-        state.hero.mp = state.hero.mpMax;
-        state.combat = null;
-        addLog(`You dropped ${lost} gold in the chaos.`);
-        state.turn++;
-        renderHUD();
-        return;
-      }
+      if (state.hero.hp <= 0) return defeatPenalty();
+    } else {
+      const dmg = calcDamage(e.atk, heroDef, 2);
+      state.hero.hp = clamp(state.hero.hp - dmg, 0, state.hero.hpMax);
+      addLog(`${e.name} attacks you for ${dmg} damage!`);
+      state.combat.heroDefending = false;
 
-      // Start of hero turn status tick + stun check
-      tickStatuses(state.hero, "You");
-      if (hasStatus(state.hero, "stun")) {
-        addLog("You are stunned and lose your turn!");
-        state.combat.turn = "enemy";
-        state.turn++;
-        renderHUD();
-        setTimeout(doEnemyTurn, 280);
-        return;
-      }
+      shake(7, 10);
+      spawnFloater(`-${dmg}`, canvas.width / 2, canvas.height / 2);
+      spawnParticles(anim.heroPx.x + 40, anim.heroPx.y + 20, 14);
 
-      state.combat.turn = "hero";
-      state.turn++;
-      renderHUD();
-      return;
+      if (state.hero.hp <= 0) return defeatPenalty();
     }
 
-    // normal attack
-    const heroDef = getHeroDef() + (state.combat.heroDefending ? 3 : 0);
-    const dmg = calcDamage(e.atk, heroDef, 2);
-    state.hero.hp = clamp(state.hero.hp - dmg, 0, state.hero.hpMax);
-    addLog(`${e.name} attacks you for ${dmg} damage!`);
-    state.combat.heroDefending = false;
-
-    shake(7, 10);
-    spawnFloater(`-${dmg}`, canvas.width / 2, canvas.height / 2);
-    spawnParticles(anim.heroPx.x + 40, anim.heroPx.y + 20, 14);
-
-    if (state.hero.hp <= 0) {
-      addLog("You are defeated... You wake up at full HP but lose some gold.");
-      const lost = Math.floor(state.hero.gold * 0.25);
-      state.hero.gold -= lost;
-      state.hero.hp = state.hero.hpMax;
-      state.hero.mp = state.hero.mpMax;
-      state.combat = null;
-      addLog(`You dropped ${lost} gold in the chaos.`);
-      state.turn++;
-      renderHUD();
-      return;
-    }
-
-    // Start of hero turn: tick statuses + stun check
     tickStatuses(state.hero, "You");
     if (hasStatus(state.hero, "stun")) {
       addLog("You are stunned and lose your turn!");
@@ -1209,8 +1383,6 @@
       const dmg = calcDamage(getHeroAtk(), e.def, 2);
       e.hp = clamp(e.hp - dmg, 0, e.hpMax);
       addLog(`You attack ${e.name} for ${dmg} damage!`);
-      state.combat.lastAction = "attack";
-
       shake(5, 8);
       spawnFloater(`-${dmg}`, canvas.width / 2 + 40, canvas.height / 2 - 20);
       spawnParticles(anim.heroPx.x + 50, anim.heroPx.y + 10, 12);
@@ -1219,39 +1391,29 @@
     if (action === "defend") {
       state.combat.heroDefending = true;
       addLog("You defend (+3 DEF until the next hit).");
-      state.combat.lastAction = "defend";
     }
 
     if (action === "heal") {
-      if (state.hero.potions <= 0) {
-        addLog("No potions left!");
-        state.combat.lastAction = "heal-fail";
-      } else {
+      if (state.hero.potions <= 0) addLog("No potions left!");
+      else {
         state.hero.potions -= 1;
         const amt = Math.round(state.hero.hpMax * 0.35) + rnd(2, 6);
         state.hero.hp = clamp(state.hero.hp + amt, 0, state.hero.hpMax);
         addLog(`You drink a potion and restore ${amt} HP.`);
-        state.combat.lastAction = "heal";
       }
     }
 
     if (action === "run") {
       const p = 0.45 + (state.hero.level - e.level) * 0.05;
-      if (chance(clamp(p, 0.15, 0.9))) {
-        endCombat(false);
-        return;
-      }
+      if (chance(clamp(p, 0.15, 0.9))) return endCombat(false);
       addLog("You fail to run away!");
-      state.combat.lastAction = "run-fail";
     }
 
     // Skills
     if (action === "fireball") {
       const cost = 4;
-      if (state.hero.mp < cost) {
-        addLog("Not enough MP for Fireball!");
-        state.combat.lastAction = "fireball-fail";
-      } else {
+      if (state.hero.mp < cost) addLog("Not enough MP for Fireball!");
+      else {
         state.hero.mp -= cost;
         const dmg = calcDamage(getHeroAtk() + 4, e.def, 3);
         e.hp = clamp(e.hp - dmg, 0, e.hpMax);
@@ -1260,8 +1422,6 @@
           addStatus(e, "burn", { turns: 3, dmg: 3 });
           addLog(`${e.name} is burning!`);
         }
-        state.combat.lastAction = "fireball";
-
         shake(6, 9);
         spawnFloater(`-${dmg}`, canvas.width / 2 + 40, canvas.height / 2 - 20);
         spawnParticles(anim.heroPx.x + 50, anim.heroPx.y + 10, 18);
@@ -1270,18 +1430,14 @@
 
     if (action === "poison") {
       const cost = 3;
-      if (state.hero.mp < cost) {
-        addLog("Not enough MP for Poison Strike!");
-        state.combat.lastAction = "poison-fail";
-      } else {
+      if (state.hero.mp < cost) addLog("Not enough MP for Poison Strike!");
+      else {
         state.hero.mp -= cost;
         const dmg = calcDamage(getHeroAtk(), e.def, 2);
         e.hp = clamp(e.hp - dmg, 0, e.hpMax);
         addLog(`You slash with Poison Strike for ${dmg} damage!`);
         addStatus(e, "poison", { turns: 4, dmg: 2 + Math.floor(state.hero.level / 3) });
         addLog(`${e.name} is poisoned!`);
-        state.combat.lastAction = "poison";
-
         shake(5, 8);
         spawnFloater(`-${dmg}`, canvas.width / 2 + 40, canvas.height / 2 - 20);
         spawnParticles(anim.heroPx.x + 50, anim.heroPx.y + 10, 14);
@@ -1290,10 +1446,8 @@
 
     if (action === "stun") {
       const cost = 2;
-      if (state.hero.mp < cost) {
-        addLog("Not enough MP for Stun Bash!");
-        state.combat.lastAction = "stun-fail";
-      } else {
+      if (state.hero.mp < cost) addLog("Not enough MP for Stun Bash!");
+      else {
         state.hero.mp -= cost;
         const dmg = calcDamage(getHeroAtk() + 1, e.def, 1);
         e.hp = clamp(e.hp - dmg, 0, e.hpMax);
@@ -1302,48 +1456,37 @@
           addStatus(e, "stun", { turns: 1 });
           addLog(`${e.name} is stunned!`);
         }
-        state.combat.lastAction = "stun";
-
         shake(6, 9);
         spawnFloater(`-${dmg}`, canvas.width / 2 + 40, canvas.height / 2 - 20);
         spawnParticles(anim.heroPx.x + 50, anim.heroPx.y + 10, 16);
       }
     }
 
-    // Start of enemy turn: status ticks
-    if (state.combat) {
-      tickStatuses(state.combat.enemy, state.combat.enemy.name);
-    }
+    tickStatuses(e, e.name);
 
-    // Victory check
-    if (state.combat && e.hp <= 0) {
+    if (e.hp <= 0) {
       addLog(`${e.name} is defeated.`);
-      endCombat(true);
-      return;
+      return endCombat(true);
     }
 
-    // Enemy stunned?
-    if (state.combat && hasStatus(state.combat.enemy, "stun")) {
-      addLog(`${state.combat.enemy.name} is stunned and skips its turn!`);
+    if (hasStatus(e, "stun")) {
+      addLog(`${e.name} is stunned and skips its turn!`);
       state.combat.turn = "hero";
       state.turn++;
       renderHUD();
       return;
     }
 
-    // Enemy turn
-    if (state.combat) {
-      state.combat.turn = "enemy";
-      renderHUD();
-      setTimeout(doEnemyTurn, 280);
-    }
+    state.combat.turn = "enemy";
+    renderHUD();
+    setTimeout(doEnemyTurn, 280);
   }
 
   // ---------- Save / Load ----------
   function saveGame() {
     const payload = structuredClone(state);
-    payload.meta.savedAt = nowISO();
-    payload.meta.version = 2;
+    payload.meta.savedAt = new Date().toISOString();
+    payload.meta.version = 1;
     payload.hero.map = world.current;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     addLog("Game saved.");
@@ -1351,18 +1494,12 @@
 
   function loadGame() {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      addLog("No save found.");
-      return;
-    }
+    if (!raw) return addLog("No save found.");
     try {
       const parsed = JSON.parse(raw);
-      if (!parsed || !parsed.hero || !parsed.world) throw new Error("Bad save");
       state = parsed;
-
       world.current = state.hero.map || "town";
       initAnimPositions();
-
       addLog(`Loaded save (${state.meta?.savedAt ?? "unknown time"}).`);
       renderHUD();
     } catch (e) {
@@ -1383,10 +1520,7 @@
   const keysDown = new Set();
 
   window.addEventListener("keydown", (e) => {
-    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) {
-      e.preventDefault();
-    }
-
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) e.preventDefault();
     keysDown.add(e.key.toLowerCase());
 
     if (state.combat) {
@@ -1401,10 +1535,7 @@
     }
 
     if (e.key.toLowerCase() === "e") interact();
-    if (e.key.toLowerCase() === "l") {
-      state.ui.showLog = !state.ui.showLog;
-      renderHUD();
-    }
+    if (e.key.toLowerCase() === "l") { state.ui.showLog = !state.ui.showLog; renderHUD(); }
     if (e.key.toLowerCase() === "i") openInventory();
   });
 
@@ -1443,6 +1574,11 @@
   btnLoad.addEventListener("click", loadGame);
   btnHelp.addEventListener("click", () => helpDialog.showModal());
 
+  btnHud.addEventListener("click", () => {
+    state.ui.hudHiddenMobile = !state.ui.hudHiddenMobile;
+    renderHUD();
+  });
+
   btnUsePotion.addEventListener("click", usePotionOutsideCombat);
   btnCloseInv.addEventListener("click", () => invDialog.close());
   btnCloseShop.addEventListener("click", () => shopDialog.close());
@@ -1454,11 +1590,8 @@
   });
 
   // ---------- Start ----------
-  (async () => {
-    await loadAssets();
-    addLog("Welcome! Explore town, accept the Elder’s quest, and defeat the dungeon boss.");
-    renderHUD();
-    requestAnimationFrame(draw);
-    requestAnimationFrame(inputLoop);
-  })();
+  addLog("Welcome! Explore town, accept the Elder’s quest, and defeat the dungeon boss.");
+  renderHUD();
+  requestAnimationFrame(draw);
+  requestAnimationFrame(inputLoop);
 })();

@@ -1,13 +1,13 @@
 :root {
-  --bg: #0b1020;
-  --panel: #101a33;
-  --card: #0f1830;
+  --bg0: #070a14;
+  --bg1: #0b1020;
+  --panel: rgba(16, 26, 51, 0.62);
+  --card: rgba(15, 24, 48, 0.74);
   --text: #e7ecff;
   --muted: #b7c2ffcc;
-  --accent: #7aa2ff;
-  --border: #ffffff22;
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-  --radius: 14px;
+  --border: rgba(255,255,255,0.14);
+  --shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+  --radius: 16px;
   --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
     "Courier New", monospace;
   --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
@@ -15,12 +15,15 @@
 }
 
 * { box-sizing: border-box; }
+html, body { height: 100%; }
 
 body {
   margin: 0;
   font-family: var(--sans);
-  background: radial-gradient(1100px 700px at 25% 15%, #17244b 0%, var(--bg) 55%, #070a14 100%);
   color: var(--text);
+  background:
+    radial-gradient(1100px 700px at 25% 15%, #17244b 0%, var(--bg1) 55%, var(--bg0) 100%);
+  overflow-x: hidden;
 }
 
 .topbar {
@@ -29,40 +32,75 @@ body {
   justify-content: space-between;
   padding: 14px 18px;
   border-bottom: 1px solid var(--border);
-  background: rgba(8, 12, 24, 0.65);
-  backdrop-filter: blur(10px);
+  background: rgba(8, 12, 24, 0.70);
+  backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
   z-index: 10;
 }
 
-.title { font-weight: 800; letter-spacing: 0.5px; }
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.brand-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #7aa2ff, #66ffd0);
+  box-shadow: 0 0 16px rgba(122,162,255,0.45);
+}
+.title {
+  font-weight: 900;
+  letter-spacing: 0.5px;
+}
 
-.buttons button { margin-left: 8px; }
+.top-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(300px, 680px) 360px;
+  grid-template-columns: minmax(320px, 820px) 360px;
   gap: 16px;
   padding: 16px;
   align-items: start;
 }
 
 .panel {
-  background: rgba(16, 26, 51, 0.6);
+  background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 12px;
 }
 
+.canvasWrap {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #05070f;
+}
+
 #game {
   width: 100%;
   height: auto;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: #05070f;
+  display: block;
   image-rendering: pixelated;
+}
+
+.cornerPill {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(0,0,0,0.35);
+  backdrop-filter: blur(10px);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.2px;
 }
 
 .hint {
@@ -76,15 +114,15 @@ kbd {
   font-family: var(--mono);
   font-size: 12px;
   padding: 2px 6px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: #0b1430;
+  border-radius: 9px;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(11, 20, 48, 0.75);
 }
 
 .hud { display: flex; flex-direction: column; gap: 12px; }
 
 .card {
-  background: rgba(15, 24, 48, 0.7);
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
@@ -101,7 +139,7 @@ kbd {
 .mono {
   font-family: var(--mono);
   font-size: 13px;
-  line-height: 1.4;
+  line-height: 1.45;
   white-space: pre-wrap;
 }
 
@@ -110,15 +148,26 @@ kbd {
 button {
   cursor: pointer;
   color: var(--text);
-  background: #13214a;
-  border: 1px solid var(--border);
-  padding: 8px 10px;
-  border-radius: 10px;
-  transition: transform 0.04s ease, background 0.15s ease;
+  background: rgba(19, 33, 74, 0.85);
+  border: 1px solid rgba(255,255,255,0.18);
+  padding: 9px 11px;
+  border-radius: 12px;
+  transition: transform 0.06s ease, background 0.16s ease, border-color 0.16s ease;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.24);
 }
 
-button:hover { background: #182a5f; }
-button:active { transform: translateY(1px); }
+button:hover {
+  background: rgba(24, 42, 95, 0.92);
+  border-color: rgba(255,255,255,0.24);
+}
+
+button:active { transform: translateY(1px) scale(0.99); }
+
+button.ghost {
+  background: rgba(0,0,0,0.20);
+  border-color: rgba(255,255,255,0.14);
+  box-shadow: none;
+}
 
 .actions {
   display: grid;
@@ -129,16 +178,41 @@ button:active { transform: translateY(1px); }
 
 .hidden { display: none !important; }
 
-.log { max-height: 180px; overflow: auto; padding-right: 6px; }
+.log { max-height: 190px; overflow: auto; padding-right: 6px; }
 .logCard.hidden { display: none; }
 
-dialog {
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: #0b1430;
-  color: var(--text);
-  box-shadow: var(--shadow);
-  max-width: 560px;
+.log::-webkit-scrollbar { width: 10px; }
+.log::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12);
+  border-radius: 999px;
+}
+.log::-webkit-scrollbar-track {
+  background: rgba(0,0,0,0.12);
 }
 
-dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
+dialog {
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 16px;
+  background: rgba(11, 20, 48, 0.96);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  max-width: 620px;
+}
+
+dialog::backdrop { background: rgba(0, 0, 0, 0.70); }
+
+@media (max-width: 980px) {
+  .layout { grid-template-columns: 1fr; }
+  .hud {
+    position: fixed;
+    right: 16px;
+    left: 16px;
+    bottom: 16px;
+    max-height: 62vh;
+    overflow: auto;
+    z-index: 20;
+    padding-bottom: 10px;
+    border-radius: 18px;
+  }
+  .hud.isHidden { display: none; }
+}
